@@ -18,7 +18,6 @@ begin
     
     process (clk, rst) begin
         if rst = '1' then clkdiv <= (others=>'0');
-        -- ISE gets mad at Yosys's netlist if we just read from clocks like normal logic
             elsif rising_edge(clk) then
                 clkdiv <= std_logic_vector(unsigned(clkdiv) + 1);
                 clkout <= dividedClk;
