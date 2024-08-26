@@ -1,7 +1,5 @@
 NET clk LOC=D11;
 
-NET rst LOC= P8;
-
 NET led<0> LOC=W3;
 NET led<1> LOC=Y4;
 NET led<2> LOC=Y1;
@@ -14,8 +12,8 @@ NET led<7> LOC=AA4;
 NET swt<0> LOC= V5;
 NET swt<1> LOC= U4;
 NET swt<2> LOC= V3;
-#NET swt<3> LOC= P4;
-#NET swt<4> LOC= R4;
-#NET swt<5> LOC= P6;
-#NET swt<6> LOC= P5;
-#NET swt<7> LOC= P8;
+NET swt<3> LOC= P4;
+NET swt<4> LOC= R4;
+NET swt<5> LOC= P6;
+NET swt<6> LOC= P5;
+NET swt<7> LOC= P8;

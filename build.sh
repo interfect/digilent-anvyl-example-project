@@ -35,7 +35,7 @@ function run_ise() {
         fi
         
         ${RUNNER} run \
-            -it \
+            -i \
             --rm \
             --net=none \
             --user $(id -u) \
@@ -68,21 +68,41 @@ YOSYS_XILINX_FAMILY="xc6s"
 # THe part on the Digilent Anvyl is the xc6slx45-3-csg484
 ISE_PART="xc6slx45-3-csg484"
 
-# Where the netlist output goes
-EDIF_FILE="main.edif"
-# Extra flags to GHDL Yosys plugin for controling VHDL interpretation.
-# If your VHDL uses the pseudostandard Synopsys imports to do math directly on
-# logic-typoe values, like "STD_LOGIC_ARITH", you need -fsynopsys here.
-GHDL_FLAGS=(-fsynopsys)
+# Should we use Yosys or ISE to synthesize the netlist?
+# TODO: ISE only works for one VHDL file at a time right now.
+VHDL_FRONTEND="yosys"
 
-# Use the GHDL Yosys plugin to synthesize VHDL
-# See <https://github.com/ghdl/ghdl-yosys-plugin?tab=readme-ov-file#containers>
-# Use a bunch of magic clock-related commands from <https://github.com/9ary/yosys-spartan6-example/blob/618328a594641ed27a6648118c20a5e6be1da99c/synthesize.sh>
-docker run --rm -t \
-  -v "${PROJECT_ROOT}":/workspace \
-  -w /workspace \
-  hdlc/ghdl:yosys \
-  yosys -m ghdl -p "ghdl -fsynopsys ${VHDL_FILES[@]} -e ${VHDL_UNIT}; synth_xilinx -family ${YOSYS_XILINX_FAMILY} -top ${VHDL_UNIT} -retime; select -set clocks */t:FDRE %x:+FDRE[C] */t:FDRE %d; iopadmap -inpad BUFGP O:I @clocks; iopadmap -outpad OBUF I:O -inpad IBUF O:I @clocks %n; write_edif ${EDIF_FILE}"
+if [[ "${VHDL_FRONTEND}" == "yosys" ]] ; then
+
+    # Where the netlist output goes
+    NETLIST_FILE="${VHDL_UNIT}.edif"
+    # Extra flags to GHDL Yosys plugin for controling VHDL interpretation.
+    # If your VHDL uses the pseudostandard Synopsys imports to do math directly on
+    # logic-typoe values, like "STD_LOGIC_ARITH", you need -fsynopsys here.
+    #GHDL_FLAGS=(-fsynopsys)
+    GHDL_FLAGS=()
+
+    # Use the GHDL Yosys plugin to synthesize VHDL
+    # See <https://github.com/ghdl/ghdl-yosys-plugin?tab=readme-ov-file#containers>
+    # Use a bunch of magic clock-related commands from <https://github.com/9ary/yosys-spartan6-example/blob/618328a594641ed27a6648118c20a5e6be1da99c/synthesize.sh>
+    # If you don't have the -pvector bra option on the write_edif command, as
+    # suggested in
+    # <https://github.com/YosysHQ/yosys/issues/448#issuecomment-561523711>,
+    # synthesis will appear to complete but the design won't be able to do
+    # math. It will conclude that e.g. 3 + 5 = 6. Something about configuring
+    # the ALU cells?
+    docker run --rm -t \
+      -v "${PROJECT_ROOT}":/workspace \
+      -w /workspace \
+      hdlc/ghdl:yosys \
+      yosys -m ghdl -p "ghdl ${GHDL_FLAGS[@]} ${VHDL_FILES[@]} -e ${VHDL_UNIT}; synth_xilinx -family ${YOSYS_XILINX_FAMILY} -top ${VHDL_UNIT} -ise; select -set clocks */t:FDRE %x:+FDRE[C] */t:FDRE %d; iopadmap -inpad BUFGP O:I @clocks; iopadmap -outpad OBUF I:O -inpad IBUF O:I @clocks %n; write_edif -pvector bra ${NETLIST_FILE}"
+    
+else
+    # Use ISE to synthesize the design
+    # TODO: Multiple VHDL files without a .prj?
+    NETLIST_FILE="${VHDL_UNIT}.ngc"
+    echo "run -ifn ${VHDL_FILES[0]} -ifmt vhdl -ofn ${NETLIST_FILE} -ofmt ngc -p ${ISE_PART}" | run_ise xst
+fi
 
 # Now make all the ISE files
 
@@ -91,9 +111,9 @@ docker run --rm -t \
 # TODO: Xilinx may refuse to actually run multiple threads for the Place and route step.
 ISE_THREADS="4"
 
-# Make the NGD (ISE's version of a netlist)
-NGD_FILE="${EDIF_FILE%.edif}.ngd"
-run_ise ngdbuild -uc "${UCF_FILE}" -p "${ISE_PART}" "${EDIF_FILE}" "${NGD_FILE}"
+# Make the NGD (ISE's maybe part-specific version of a netlist)
+NGD_FILE="${NETLIST_FILE%.*}.ngd"
+run_ise ngdbuild -uc "${UCF_FILE}" -p "${ISE_PART}" "${NETLIST_FILE}" "${NGD_FILE}"
 
 # Make the _map NCD file (technology mapping???)
 MAP_NCD_FILE="${NGD_FILE%.ngd}_map.ncd"
@@ -108,12 +128,16 @@ NCD_FILE="${MAP_NCD_FILE%_map.ncd}.ncd"
 run_ise par -w -mt "${ISE_THREADS}" "${MAP_NCD_FILE}" "${NCD_FILE}"
 
 # Compute a timing report
-TWR_FILE="${NCD_FILE%.ncd}.twt"
+TWR_FILE="${NCD_FILE%.ncd}.twr"
 run_ise trce -v -n -fastpaths "${NCD_FILE}" -o "${TWR_FILE}" "${MAP_PCF_FILE}"
 
 # Also make the bitstream file
 # TODO: We don't get to specify the name actually?
 BIT_FILE="${NCD_FILE%.ncd}.bit"
-run_ise bitgen -w -g Binary:Yes -g UnusedPin:PullNone "${NCD_FILE}"
+# TODO: Re-enable compression?
+run_ise bitgen -w -g Binary:Yes -g Compress -g UnusedPin:PullNone "${NCD_FILE}"
+
+# Now, with OpenOCD after <https://review.openocd.org/c/openocd/+/8467> you can upload your .bit file with:
+# openocd -f board/digilent_anvyl.cfg -c "init; virtex2 refresh xc6s.pld; pld load xc6s.pld main.bit ; exit"
 
 

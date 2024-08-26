@@ -18,6 +18,7 @@
 *_pad.txt
 *.par
 *.ptwx
+*.twr
 *_summary.xml
 *.unroutes
 *_usage.xml
