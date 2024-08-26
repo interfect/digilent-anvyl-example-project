@@ -81,7 +81,11 @@ if [[ "${VHDL_FRONTEND}" == "yosys" ]] ; then
     # logic-typoe values, like "STD_LOGIC_ARITH", you need -fsynopsys here.
     #GHDL_FLAGS=(-fsynopsys)
     GHDL_FLAGS=()
-
+    # Extra flags to send to synth_xilinx to control its behavior.
+    # For example, -noclkbuf will disable insertion of clock buffers, which ISE
+    # might complaon about you trying to use in logic later.
+    SYNTH_XILINX_FLAGS=(-noclkbuf)
+    
     # Use the GHDL Yosys plugin to synthesize VHDL
     # See <https://github.com/ghdl/ghdl-yosys-plugin?tab=readme-ov-file#containers>
     # Use a bunch of magic clock-related commands from <https://github.com/9ary/yosys-spartan6-example/blob/618328a594641ed27a6648118c20a5e6be1da99c/synthesize.sh>
@@ -95,7 +99,7 @@ if [[ "${VHDL_FRONTEND}" == "yosys" ]] ; then
       -v "${PROJECT_ROOT}":/workspace \
       -w /workspace \
       hdlc/ghdl:yosys \
-      yosys -m ghdl -p "ghdl ${GHDL_FLAGS[@]} ${VHDL_FILES[@]} -e ${VHDL_UNIT}; synth_xilinx -family ${YOSYS_XILINX_FAMILY} -top ${VHDL_UNIT} -ise; select -set clocks */t:FDRE %x:+FDRE[C] */t:FDRE %d; iopadmap -inpad BUFGP O:I @clocks; iopadmap -outpad OBUF I:O -inpad IBUF O:I @clocks %n; write_edif -pvector bra ${NETLIST_FILE}"
+      yosys -m ghdl -p "ghdl ${GHDL_FLAGS[@]} ${VHDL_FILES[@]} -e ${VHDL_UNIT}; synth_xilinx ${SYNTH_XILINX_FLAGS[@]} -family ${YOSYS_XILINX_FAMILY} -top ${VHDL_UNIT} -ise; select -set clocks */t:FDRE %x:+FDRE[C] */t:FDRE %d; iopadmap -inpad BUFGP O:I @clocks; iopadmap -outpad OBUF I:O -inpad IBUF O:I @clocks %n; write_edif -pvector bra ${NETLIST_FILE}"
     
 else
     # Use ISE to synthesize the design

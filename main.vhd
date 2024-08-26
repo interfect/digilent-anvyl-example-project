@@ -9,33 +9,38 @@ entity main is
 end main;
 
 architecture Behavioral of main is
-    signal num_a: integer range 0 to 255;
-    signal num_b: integer range 0 to 255;
-    signal sum: std_logic_vector(8 downto 0);
+    signal rst : std_logic;
+    signal clkdiv : std_logic_vector (25 downto 0);
+    signal dividedClk, clkout : std_logic;
 begin
     
-    with swt(7 downto 5) select
-	    num_a <= 35 when "111",
-                 30 when "110",
-                 25 when "101",
-                 20 when "100",
-                 15 when "011",
-                 10 when "010",
-                 5 when "001",
-                 0 when others;
+    rst <= swt(7);
+    
+    process (clk, rst) begin
+        if rst = '1' then clkdiv <= (others=>'0');
+        -- ISE gets mad at Yosys's netlist if we just read from clocks like normal logic
+            elsif rising_edge(clk) then
+                clkdiv <= std_logic_vector(unsigned(clkdiv) + 1);
+                clkout <= dividedClk;
+            end if;
+    end process;
     
     with swt(2 downto 0) select
-	    num_b <= 21 when "111",
-                 18 when "110",
-                 15 when "101",
-                 12 when "100",
-                 9 when "011",
-                 6 when "010",
-                 3 when "001",
-                 0 when others;
-    
-    sum <= std_logic_vector(to_unsigned(num_a + num_b, 9));
-    
-    led(7 downto 0) <= sum(7 downto 0);		  
+    dividedClk <= clkdiv(18) when "111",
+                  clkdiv(19) when "110",
+                  clkdiv(20) when "101",
+                  clkdiv(21) when "100",
+                  clkdiv(22) when "011",
+                  clkdiv(23) when "010",
+                  clkdiv(24) when "001",
+                  clkdiv(25) when others;
+                      
+    process (rst, clkout) begin
+        if rst = '1' then
+            led <= (others=>'0');
+        elsif rising_edge(clkout) then
+            led <= led(6 downto 0) & not led(7);
+        end if;
+    end process;                  
     
 end Behavioral;

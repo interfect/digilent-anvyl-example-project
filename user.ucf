@@ -17,3 +17,10 @@ NET swt<4> LOC= R4;
 NET swt<5> LOC= P6;
 NET swt<6> LOC= P5;
 NET swt<7> LOC= P8;
+
+# Yosys insists on inserting a global buffer (GBUF) for the logic-divided
+# clocck signal and then doesn't mark(?) the places it goes as real clock
+# inputs. So we need to tell ISE to stop chastising us about this.
+# You can also skip the clock buffer insertion step with -noclkbuf to
+# synth_xilinx
+#PIN "$auto$clkbufmap.cc:261:execute$2170.O" CLOCK_DEDICATED_ROUTE = FALSE;
