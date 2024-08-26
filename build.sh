@@ -1,7 +1,23 @@
 #!/usr/bin/env bash
 set -ex
 
-# How dhould we run the ISE tools?
+# Input source files
+VHDL_FILES=(main.vhd)
+
+# Input "user constraints file" defining the pinout you want to use on the FPGA pins.
+UCF_FILE="user.ucf"
+
+# Top-level VHDL component to synthesize
+VHDL_UNIT="main"
+
+# Xilinx FPGA family to make Yosys synthesize for. See <https://yosyshq.readthedocs.io/projects/yosys/en/latest/cmd/synth_xilinx.html>
+# Use xc6s for Spartan 6
+YOSYS_XILINX_FAMILY="xc6s"
+# ISE part name for the FPGA to place and route on.
+# THe part on the Digilent Anvyl is the xc6slx45-3-csg484
+ISE_PART="xc6slx45-3-csg484"
+
+# How should we run the ISE tools?
 # If "docker", runs ISE via a container.
 # Otherwise, expects to find them on the PATH.
 # Can be "docker" or anything else
@@ -14,6 +30,16 @@ ISE_CONTAINER="xilinx-ise"
 # What license file should we provide to the container?
 # You need a file like the one in <https://support.xilinx.com/s/question/0D54U00007uMOmMSAW/new-license-file-is-licensing-isewebpack-ise-tool-is-looking-for-webpack-how-to-resolve?language=zh_CN>
 ISE_LICENSE_PATH="${HOME}/.Xilinx/Xilinx.lic"
+
+# ISE's -mt option supports "on", "off", or exactly 1 to 4 threads
+# Modern systems probably have 4 or more threads.
+# TODO: Xilinx may refuse to actually run multiple threads for the place and route step.
+ISE_THREADS="4"
+
+# Should we use Yosys or ISE to synthesize the netlist?
+# TODO: ISE synthesis only works for one VHDL file at a time right now, since
+# we don't create a project file.
+VHDL_FRONTEND="yosys"
 
 # What directory should we mount into the ISE container?
 PROJECT_ROOT="$(pwd)"
@@ -53,25 +79,6 @@ function run_ise() {
 
 # The actual build
 
-# Input source files
-VHDL_FILES=(main.vhd)
-
-# Input "user constraints file" defining the pinout you want to use on the FPGA pins.
-UCF_FILE="user.ucf"
-
-# Top-level VHDL component to synthesize
-VHDL_UNIT="main"
-# Xilinx FPGA family to make Yosys synthesize for. See <https://yosyshq.readthedocs.io/projects/yosys/en/latest/cmd/synth_xilinx.html>
-# Use xc6s for Spartan 6
-YOSYS_XILINX_FAMILY="xc6s"
-# ISE part name for the FPGA to place and route on.
-# THe part on the Digilent Anvyl is the xc6slx45-3-csg484
-ISE_PART="xc6slx45-3-csg484"
-
-# Should we use Yosys or ISE to synthesize the netlist?
-# TODO: ISE only works for one VHDL file at a time right now.
-VHDL_FRONTEND="yosys"
-
 if [[ "${VHDL_FRONTEND}" == "yosys" ]] ; then
 
     # Where the netlist output goes
@@ -109,11 +116,6 @@ else
 fi
 
 # Now make all the ISE files
-
-# -mt option supports "on", "off", or exactly 1 to 4 threads
-# Modern systems probably have 4 or more threads.
-# TODO: Xilinx may refuse to actually run multiple threads for the Place and route step.
-ISE_THREADS="4"
 
 # Make the NGD (ISE's maybe part-specific version of a netlist)
 NGD_FILE="${NETLIST_FILE%.*}.ngd"
