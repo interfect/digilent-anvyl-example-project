@@ -1,14 +1,20 @@
 #!/usr/bin/env bash
 set -ex
 
-# Input source files
+# Input source files.
 # Note that spaces are not supported because we can't use Bash quoted array expansion later.
+# These must be in dependency order: files can only depend on earlier files.
+# This library will be named "work", so entity instantiation needs to be "work.whatever_thing"
 VHDL_FILES=(main.vhd)
+
+# We can also have a library with a custom name
+VHDL_LIBRARY=my_library_name
+VHDL_LIBRARY_FILES=()
 
 # Input "user constraints file" defining the pinout you want to use on the FPGA pins.
 UCF_FILE="user.ucf"
 
-# Top-level VHDL component to synthesize
+# Top-level VHDL component to synthesize, from the "work" library
 VHDL_UNIT="main"
 
 # Xilinx FPGA family to make Yosys synthesize for. See <https://yosyshq.readthedocs.io/projects/yosys/en/latest/cmd/synth_xilinx.html>
@@ -94,6 +100,27 @@ if [[ "${VHDL_FRONTEND}" == "yosys" ]] ; then
     # might complaon about you trying to use in logic later.
     SYNTH_XILINX_FLAGS=(-noclkbuf)
     
+    if (( ${#VHDL_LIBRARY_FILES[@]} != 0 )); then
+        # Use GHDL alone to build the library.
+        # It will dump a .cf in the current directory
+        docker run --rm -t \
+          --user $(id -u) \
+          -v "${PROJECT_ROOT}":/workspace \
+          -w /workspace \
+          hdlc/ghdl:yosys \
+          ghdl "${GHDL_FLAGS[@]}" -a --work="${VHDL_LIBRARY}" "${VHDL_LIBRARY_FILES[@]}"
+    fi
+    
+    for VHDL_FILE in "${VHDL_FILES[@]}" ; do
+        # Use GHDL alone to build all files in the top-level "work" library in dependency order
+        docker run --rm -t \
+          --user $(id -u) \
+          -v "${PROJECT_ROOT}":/workspace \
+          -w /workspace \
+          hdlc/ghdl:yosys \
+          ghdl "${GHDL_FLAGS[@]}" -a "${VHDL_FILE}"
+    done
+    
     # Use the GHDL Yosys plugin to synthesize VHDL
     # See <https://github.com/ghdl/ghdl-yosys-plugin?tab=readme-ov-file#containers>
     # Use a bunch of magic clock-related commands from <https://github.com/9ary/yosys-spartan6-example/blob/618328a594641ed27a6648118c20a5e6be1da99c/synthesize.sh>
@@ -103,11 +130,15 @@ if [[ "${VHDL_FRONTEND}" == "yosys" ]] ; then
     # synthesis will appear to complete but the design won't be able to do
     # math. It will conclude that e.g. 3 + 5 = 6. Something about configuring
     # the ALU cells?
+    # The -flatten option is required if there are multiple VHDL units in the
+    # design, or ngdbuild will complain that there are missing EDIF files, with
+    # "logical block ... with type ... could not be resolved."
     docker run --rm -t \
+      --user $(id -u) \
       -v "${PROJECT_ROOT}":/workspace \
       -w /workspace \
       hdlc/ghdl:yosys \
-      yosys -m ghdl -p "ghdl ${GHDL_FLAGS[*]} ${VHDL_FILES[*]} -e ${VHDL_UNIT}; synth_xilinx ${SYNTH_XILINX_FLAGS[@]} -family ${YOSYS_XILINX_FAMILY} -top ${VHDL_UNIT} -ise; select -set clocks */t:FDRE %x:+FDRE[C] */t:FDRE %d; iopadmap -inpad BUFGP O:I @clocks; iopadmap -outpad OBUF I:O -inpad IBUF O:I @clocks %n; write_edif -pvector bra ${NETLIST_FILE}"
+      yosys -m ghdl -p "ghdl ${VHDL_UNIT}; synth_xilinx ${SYNTH_XILINX_FLAGS[@]} -family ${YOSYS_XILINX_FAMILY} -top ${VHDL_UNIT} -ise -flatten; select -set clocks */t:FDRE %x:+FDRE[C] */t:FDRE %d; iopadmap -inpad BUFGP O:I @clocks; iopadmap -outpad OBUF I:O -inpad IBUF O:I @clocks %n; write_edif -pvector bra ${NETLIST_FILE}"
     
 else
     # Use ISE to synthesize the design
